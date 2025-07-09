@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <h1 style="text-align:center;">
+  Infectious Disease Epidemic Model Simulator<br>
+  <span style="font-size:16px; font-style:italic; color:#0faebf;">
+    Designed and Developed by Dr. Arkaprabha Sau, MBBS, MD (Gold Medal), DPH, PhD (Computer Science & Engineering)
+  </span>
+</h1>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding:20px; background:#f9f9f9; }
+    h2 { color:#2a5d84; }
+    .form-group { margin:8px 0; }
+    label { width:150px; display:inline-block; }
+    input, select { padding:4px; width:150px; }
+    button { margin-top:12px; padding:8px 16px; background:#2a5d84; color:white; border:none; border-radius:4px; cursor:pointer; }
+    button:hover { background:#1f4464; }
+    #output { margin-top:20px; padding:10px; background:#eaf2fb; border-left:4px solid #2a5d84; }
+    .chart { margin-top:30px; }
+    .model-info { margin-top:40px; background:#fff; padding:20px; border-radius:4px; box-shadow:0 2px 4px rgba(0,0,0,0.1); }
+  </style>
+</head>
+<body>
+
+<h2>Epidemic Model Simulator</h2>
+
+<div class="form-group"><label>Choose Model:</label><select id="model"><option>SIS</option><option>SIR</option><option>SEIR</option><option>SIRD</option><option>SIRV</option><option>SIRVD</option></select></div>
+<div class="form-group"><label>Start Date:</label><input type="date" id="startDate" value="2020-03-01"></div>
+<div class="form-group"><label>Population (N):</label><input type="number" id="N" value="70000000"></div>
+<div class="form-group"><label>Days:</label><input type="number" id="days" value="200"></div>
+<div class="form-group"><label>CIR:</label><input type="number" id="CIR" value="40"></div>
+<div class="form-group"><label>β (transmission):</label><input type="number" id="beta" value="0.5" step="0.01"></div>
+<div class="form-group"><label>γ (recovery):</label><input type="number" id="gamma" value="0.2" step="0.01"></div>
+<div class="form-group"><label>α (incubation):</label><input type="number" id="alpha" value="0.1724" step="0.01"></div>
+<div class="form-group"><label>μ (mortality):</label><input type="number" id="mu" value="0.01" step="0.001"></div>
+<div class="form-group"><label>ν (vaccination):</label><input type="number" id="nu" value="0.002" step="0.001"></div>
+<div class="form-group"><label>Monte Carlo runs:</label><input type="number" id="runs" value="200"></div>
+
+<button onclick="runSimulation()">Run Simulation</button>
+
+<div id="output"></div>
+<div class="chart" id="chart_full"></div>
+<div class="chart" id="chart_ci"></div>
+
+<div class="model-info" id="modelInfo">
+  <h3>🧬 Model Descriptions & Examples</h3>
+  <p><strong>SIS:</strong> Recovery gives no immunity (e.g. common cold). Parameters: β, γ.</p>
+  <p><strong>SIR:</strong> Permanent immunity on recovery (e.g. measles). β, γ.</p>
+  <p><strong>SEIR:</strong> Adds Exposed compartment (e.g. COVID‑19): α = 1/incubation.</p>
+  <p><strong>SIRD:</strong> Includes Death compartment (e.g. fatal disease): μ = death rate.</p>
+  <p><strong>SIRV:</strong> Vaccination compartment: ν = vaccination rate.</p>
+  <p><strong>SIRVD:</strong> Vaccination + death model.</p>
+  <p><strong>Example params:</strong> β=0.3; γ=0.1; α=1/5.8; μ=0.01; ν=0.002; CIR=40.</p>
+</div>
+
+<script>
+  function runSimulation() {
+    const model = document.getElementById('model').value;
+    const startDate = new Date(document.getElementById('startDate').value);
+    const N = +document.getElementById('N').value;
+    const days = +document.getElementById('days').value;
+    const CIR = +document.getElementById('CIR').value;
+    const beta = +document.getElementById('beta').value;
+    const gamma = +document.getElementById('gamma').value;
+    const alpha = +document.getElementById('alpha').value;
+    const mu = +document.getElementById('mu').value;
+    const nu = +document.getElementById('nu').value;
+    const runs = +document.getElementById('runs').value;
+
+    let Iall = Array.from({length:runs}, ()=>Array(days).fill(0));
+    let finalAffected = [];
+
+    // arrays for one deterministic run
+    let S = Array(days).fill(0), E = Array(days).fill(0),
+        I = Array(days).fill(0), R = Array(days).fill(0),
+        D = Array(days).fill(0), V = Array(days).fill(0), reported = Array(days).fill(0);
+
+    for(let r=0; r<runs; r++){
+      let Sr = [...S], Er = [...E], Ir = [...I], Rr = [...R], Dr = [...D], Vr = [...V];
+      // init
+      if(model==='SEIR'){
+        for(let i=0;i<7;i++) Er[i]=100;
+        Sr[0]=N-Er[0];
+      }else{
+        Ir[0]=100; Sr[0]=N-Ir[0];
+      }
+      for(let t=1;t<days;t++){
+        const b=beta*(1+0.05*(Math.random()-0.5));
+        const a=alpha*(1+0.05*(Math.random()-0.5));
+        const g=gamma*(1+0.05*(Math.random()-0.5));
+        const m=mu;
+        const nv=nu;
+        // flows
+        let dS, dE, dI, dR, dD, dV;
+        if(model==='SIS'){
+          dS=-b*Sr[t-1]*Ir[t-1]/N+g*Ir[t-1];
+          dI=b*Sr[t-1]*Ir[t-1]/N-g*Ir[t-1];
+          Sr[t]=Sr[t-1]+dS; Ir[t]=Ir[t-1]+dI;
+        }
+        if(model==='SIR'){
+          dS=-b*Sr[t-1]*Ir[t-1]/N;
+          dI=b*Sr[t-1]*Ir[t-1]/N-g*Ir[t-1];
+          dR=g*Ir[t-1];
+          Sr[t]=Sr[t-1]+dS; Ir[t]=Ir[t-1]+dI; Rr[t]=Rr[t-1]+dR;
+        }
+        if(model==='SEIR'){
+          dS=-b*Sr[t-1]*Ir[t-1]/N;
+          dE=b*Sr[t-1]*Ir[t-1]/N-a*Er[t-1];
+          dI=a*Er[t-1]-g*Ir[t-1];
+          dR=g*Ir[t-1];
+          Sr[t]=Sr[t-1]+dS; Er[t]=Er[t-1]+dE;
+          Ir[t]=Ir[t-1]+dI; Rr[t]=Rr[t-1]+dR;
+        }
+        if(model==='SIRD' || model==='SIRVD'){
+          dS=-b*Sr[t-1]*Ir[t-1]/N - ((model==='SIRVD')?nv*Sr[t-1]:0);
+          dI=b*Sr[t-1]*Ir[t-1]/N-g*Ir[t-1]-m*Ir[t-1];
+          dR=g*Ir[t-1];
+          dD=m*Ir[t-1];
+          Sr[t]=Sr[t-1]+dS; Ir[t]=Ir[t-1]+dI; Rr[t]=Rr[t-1]+dR; Dr[t]=Dr[t-1]+dD;
+        }
+        if(model==='SIRV'){
+          dS=-b*Sr[t-1]*Ir[t-1]/N - nv*Sr[t-1];
+          dI=b*Sr[t-1]*Ir[t-1]/N-g*Ir[t-1];
+          dR=g*Ir[t-1];
+          dV=nv*Sr[t-1];
+          Sr[t]=Sr[t-1]+dS; Ir[t]=Ir[t-1]+dI; Rr[t]=Rr[t-1]+dR; Vr[t]=Vr[t-1]+dV;
+        }
+        // reported
+        reported[t]= (model==='SEIR')? (alpha*Er[t]/CIR) : (beta*Sr[t]*Ir[t]/(N*CIR));
+        Iall[r][t]=Ir[t];
+      }
+      finalAffected.push(N - Sr[days-1]);
+      if(r===0){ [S,E,I,R,D,V] = [Sr,Er,Ir,Rr,Dr,Vr]; }
+    }
+
+    // compute CI & medians
+    let Imed=[], Ilow=[], Ihigh=[];
+    for(let t=0;t<days;t++){
+      const arr = Iall.map(run=>run[t]).sort((a,b)=>a-b);
+      Imed.push(arr[Math.floor(runs/2)]);
+      Ilow.push(arr[Math.floor(0.025*runs)]);
+      Ihigh.push(arr[Math.floor(0.975*runs)]);
+    }
+
+    // find thresholds
+    let c100,c1k,c10k, below1k;
+    for(let t=0;t<days;t++){
+      if(!c100 && Imed[t]>100) c100=t;
+      if(!c1k && Imed[t]>1000) c1k=t;
+      if(!c10k && Imed[t]>10000) c10k=t;
+      if(c1k && !below1k && Imed[t]<1000) below1k=t;
+    }
+    const toDate = d => new Date(startDate.getTime()+d*86400000).toDateString();
+    const dur = (c1k && below1k)?(below1k-c1k):'N/A';
+    const medAffected = Math.floor(finalAffected.sort((a,b)=>a-b)[runs/2]);
+
+    document.getElementById('output').innerHTML = `
+      <strong>Wave Summary</strong><br>
+      Crossed 100 on: ${c100?toDate(c100):'N/A'} (day ${c100})<br>
+      Crossed 1,000 on: ${c1k?toDate(c1k):'N/A'} (day ${c1k})<br>
+      Crossed 10,000 on: ${c10k?toDate(c10k):'N/A'} (day ${c10k})<br>
+      Dropped below 1,000 on: ${below1k?toDate(below1k):'N/A'} (day ${below1k})<br>
+      Duration above 1,000: ${dur} days<br>
+      Total affected (median): ${medAffected.toLocaleString()}
+    `;
+
+    const x = [...Array(days).keys()];
+    Plotly.newPlot('chart_full', [
+      {x,y:S, name:'Susceptible'},
+      ...(model==='SEIR'?[{x,y:E,name:'Exposed'}]:[]),
+      {x,y:I,name:'Infected'},
+      {x,y:R,name:'Recovered'},
+      ...(model.includes('D')?[{x,y:D,name:'Deceased'}]:[]),
+      ...(model.includes('V')?[{x,y:V,name:'Vaccinated'}]:[]),
+      {x,y:reported,name:'Reported Cases', line:{dash:'dot'}}
+    ], {title:'Full Dynamics', xaxis:{title:'Days'}, legend:{orientation:'h', y: -0.2,yanchor: 'top'}});
+
+    Plotly.newPlot('chart_ci', [
+      {x:[...x,...x.slice().reverse()], y:[...Ihigh,...Ilow.slice().reverse()], fill:'toself', fillcolor:'rgba(255,0,0,0.2)', line:{color:'transparent'}, name:'95% CI'},
+      {x,y:Imed, name:'Median Infected', line:{color:'red',width:2}}
+    ], {title:'Infected with 95% CI', xaxis:{title:'Days'}});
+  }
+</script>
+
+</body>
+</html>
